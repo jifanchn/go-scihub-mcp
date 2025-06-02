@@ -172,4 +172,4 @@ quick-start: build ## 快速开始：构建并显示帮助
 	@echo "4. 下载论文："
 	@echo "   ./$(BINARY_NAME) fetch --doi \"10.1038/nature12373\""
 	@echo ""
-	@./$(BINARY_NAME) --help 
+	@./$(BINARY_NAME) --help

@@ -7,26 +7,19 @@ WORKDIR /app
 # 安装必要工具
 RUN apk add --no-cache git
 
-# 禁用所有代理设置（覆盖外部daemon的代理配置）
-ENV HTTP_PROXY=""
-ENV HTTPS_PROXY=""
-ENV http_proxy=""
-ENV https_proxy=""
-ENV ALL_PROXY=""
-ENV all_proxy=""
-ENV NO_PROXY=""
-ENV no_proxy=""
-
-# 设置Go代理（仅用于构建时下载依赖）
+# 设置Go代理为direct模式（直接连接，绕过所有代理）
 ENV GOPROXY=https://goproxy.cn,direct
-ENV GOSUMDB=sum.golang.org
+ENV GOSUMDB=off
 ENV CGO_ENABLED=0
 
 # 复制 go mod 文件
 COPY go.mod go.sum ./
 
-# 下载依赖
-RUN go mod download
+# 禁用Git代理并下载依赖
+RUN git config --global http.proxy "" && \
+    git config --global https.proxy "" && \
+    unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy && \
+    go mod download
 
 # 复制源代码
 COPY . .

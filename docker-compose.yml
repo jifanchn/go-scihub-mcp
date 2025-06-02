@@ -8,9 +8,6 @@ services:
       - "8088:8088"
     environment:
       - TZ=Asia/Shanghai
-    volumes:
-      - ./cache:/app/cache
-      - ./configs:/app/configs:ro
     command: >
       ./scihub-mcp 
       --mcp-host 0.0.0.0 
