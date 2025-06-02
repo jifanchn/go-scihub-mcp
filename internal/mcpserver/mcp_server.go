@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"os"
@@ -67,6 +68,7 @@ func (m *MCPServer) registerTools() {
 		mcp.WithString("url", mcp.Description("Original URL of the paper")),
 		mcp.WithString("title", mcp.Description("Title of the paper")),
 		mcp.WithString("output_path", mcp.Description("Output file path (optional)")),
+		mcp.WithBoolean("save_to_cache", mcp.Description("Whether to save file to server cache (default: false). If false, returns file content as base64")),
 	)
 
 	m.server.AddTool(downloadTool, m.handleDownloadPaper)
@@ -133,6 +135,7 @@ func (m *MCPServer) handleDownloadPaper(ctx context.Context, request mcp.CallToo
 	url := request.GetString("url", "")
 	title := request.GetString("title", "")
 	outputPath := request.GetString("output_path", "")
+	saveToCache := request.GetBool("save_to_cache", false) // 默认不保存到缓存
 
 	if doi == "" && url == "" {
 		return mcp.NewToolResultError("Must provide either DOI or URL"), nil
@@ -145,22 +148,26 @@ func (m *MCPServer) handleDownloadPaper(ctx context.Context, request mcp.CallToo
 		Title: title,
 	}
 
-	// 执行下载
-	result, err := m.downloader.Download(req)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Download failed: %v", err)), nil
-	}
+	var result *downloader.DownloadResult
+	var err error
 
-	// 如果指定了输出路径，复制文件
-	if outputPath != "" {
-		if err := copyFile(result.FilePath, outputPath); err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to copy file: %v", err)), nil
+	if saveToCache {
+		// 使用原有的下载到缓存的方法
+		result, err = m.downloader.Download(req)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Download failed: %v", err)), nil
 		}
-		result.FilePath = outputPath
-	}
 
-	// 准备响应数据
-	responseText := fmt.Sprintf(`Download completed!
+		// 如果指定了输出路径，复制文件
+		if outputPath != "" {
+			if err := copyFile(result.FilePath, outputPath); err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("Failed to copy file: %v", err)), nil
+			}
+			result.FilePath = outputPath
+		}
+
+		// 准备响应数据
+		responseText := fmt.Sprintf(`Download completed!
 
 File information:
 - Filename: %s
@@ -168,11 +175,67 @@ File information:
 - File path: %s
 - Mirror used: %s
 - From cache: %v
+- Saved to cache: true
 
 Status: %s
 `, result.Filename, result.Size, result.FilePath, result.MirrorUsed, result.Cached, result.Message)
 
-	return mcp.NewToolResultText(responseText), nil
+		return mcp.NewToolResultText(responseText), nil
+	} else {
+		// 下载到内存，不保存缓存
+		result, err = m.downloader.DownloadToMemory(req)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Download failed: %v", err)), nil
+		}
+
+		// 如果指定了输出路径，保存文件
+		if outputPath != "" {
+			if err := os.WriteFile(outputPath, result.Content, 0644); err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("Failed to write file to %s: %v", outputPath, err)), nil
+			}
+			result.FilePath = outputPath
+		}
+
+		// 将文件内容编码为base64
+		base64Content := base64.StdEncoding.EncodeToString(result.Content)
+
+		// 准备响应数据
+		responseText := fmt.Sprintf(`Download completed!
+
+File information:
+- Filename: %s
+- File size: %d bytes
+- Mirror used: %s
+- From cache: %v
+- Saved to cache: false
+- Content available as base64
+
+File content (base64):
+%s
+
+Status: %s
+`, result.Filename, result.Size, result.MirrorUsed, result.Cached, base64Content, result.Message)
+
+		if outputPath != "" {
+			responseText = fmt.Sprintf(`Download completed!
+
+File information:
+- Filename: %s
+- File size: %d bytes
+- File path: %s
+- Mirror used: %s
+- From cache: %v
+- Saved to cache: false
+
+File content (base64):
+%s
+
+Status: %s
+`, result.Filename, result.Size, result.FilePath, result.MirrorUsed, result.Cached, base64Content, result.Message)
+		}
+
+		return mcp.NewToolResultText(responseText), nil
+	}
 }
 
 // handleCheckMirrorStatus 处理检查镜像状态工具

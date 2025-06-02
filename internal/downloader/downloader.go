@@ -33,6 +33,7 @@ type DownloadResult struct {
 	DownloadURL string `json:"download_url"`
 	Cached      bool   `json:"cached"`
 	FilePath    string `json:"file_path"`
+	Content     []byte `json:"content,omitempty"`
 }
 
 // Downloader 下载器
@@ -331,4 +332,120 @@ func (d *Downloader) ClearCache() error {
 	}
 
 	return nil
+}
+
+// DownloadToMemory 下载文件到内存中（不保存到缓存）
+func (d *Downloader) DownloadToMemory(req *DownloadRequest) (*DownloadResult, error) {
+	// 验证请求
+	if req.DOI == "" && req.URL == "" {
+		return &DownloadResult{
+			Success: false,
+			Message: "Must provide DOI or URL",
+		}, fmt.Errorf("Invalid download request")
+	}
+
+	// 生成文件名
+	filename := d.generateCacheFilename(req)
+
+	// 尝试从各个镜像下载到内存
+	return d.downloadFromMirrorsToMemory(req, filename)
+}
+
+// downloadFromMirrorsToMemory 从镜像下载到内存
+func (d *Downloader) downloadFromMirrorsToMemory(req *DownloadRequest, filename string) (*DownloadResult, error) {
+	available := d.mirrorManager.GetAvailableMirrors()
+	if len(available) == 0 {
+		return &DownloadResult{
+			Success: false,
+			Message: "No available mirrors",
+		}, fmt.Errorf("No available mirrors")
+	}
+
+	var lastError error
+
+	// 按响应时间排序尝试每个镜像
+	for _, mirror := range available {
+		result, err := d.downloadFromMirrorToMemory(req, mirror.URL, filename)
+		if err == nil {
+			result.MirrorUsed = mirror.URL
+			return result, nil
+		}
+		lastError = err
+	}
+
+	return &DownloadResult{
+		Success: false,
+		Message: fmt.Sprintf("Download failed: %v", lastError),
+	}, lastError
+}
+
+// downloadFromMirrorToMemory 从指定镜像下载到内存
+func (d *Downloader) downloadFromMirrorToMemory(req *DownloadRequest, mirrorURL, filename string) (*DownloadResult, error) {
+	for attempt := 0; attempt < d.maxRetries; attempt++ {
+		result, err := d.attemptDownloadToMemory(req, mirrorURL, filename)
+		if err == nil {
+			return result, nil
+		}
+
+		if attempt < d.maxRetries-1 {
+			time.Sleep(time.Duration(attempt+1) * time.Second)
+		}
+	}
+
+	return nil, fmt.Errorf("Download failed, retried %d times", d.maxRetries)
+}
+
+// attemptDownloadToMemory 尝试下载到内存
+func (d *Downloader) attemptDownloadToMemory(req *DownloadRequest, mirrorURL, filename string) (*DownloadResult, error) {
+	// 构建下载URL
+	downloadURL, err := d.buildDownloadURL(mirrorURL, req)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to build download URL: %w", err)
+	}
+
+	// 首先获取论文页面，解析真实的PDF链接
+	pdfURL, err := d.getPDFURL(downloadURL)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to get PDF link: %w", err)
+	}
+
+	// 下载PDF文件到内存
+	content, err := d.downloadFileToMemory(pdfURL)
+	if err != nil {
+		return nil, fmt.Errorf("Download file failed: %w", err)
+	}
+
+	return &DownloadResult{
+		Success:     true,
+		Message:     "Download succeeded",
+		Filename:    filename,
+		Size:        int64(len(content)),
+		DownloadURL: pdfURL,
+		Cached:      false,
+		Content:     content,
+	}, nil
+}
+
+// downloadFileToMemory 下载文件到内存
+func (d *Downloader) downloadFileToMemory(url string) ([]byte, error) {
+	client := d.proxyManager.GetHTTPClient()
+	client.Timeout = d.timeout
+
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("Download request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Download returned status code: %d", resp.StatusCode)
+	}
+
+	// 读取全部内容到内存
+	content, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to read response body: %w", err)
+	}
+
+	return content, nil
 }
