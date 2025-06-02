@@ -50,18 +50,20 @@ type MirrorManager struct {
 	proxyManager  *proxy.ProxyManager
 	checkInterval time.Duration
 	checkTimeout  time.Duration
+	silent        bool
 	mu            sync.RWMutex
 	stopChan      chan struct{}
 	wg            sync.WaitGroup
 }
 
-// NewMirrorManager 创建镜像管理器
-func NewMirrorManager(mirrorURLs []string, proxyManager *proxy.ProxyManager, checkInterval, checkTimeout time.Duration) *MirrorManager {
+// NewMirrorManager 创建新的镜像管理器
+func NewMirrorManager(mirrorURLs []string, proxyManager *proxy.ProxyManager, checkInterval, checkTimeout time.Duration, silent bool) *MirrorManager {
 	mm := &MirrorManager{
 		mirrors:       make(map[string]*Mirror),
 		proxyManager:  proxyManager,
 		checkInterval: checkInterval,
 		checkTimeout:  checkTimeout,
+		silent:        silent,
 		stopChan:      make(chan struct{}),
 	}
 
@@ -128,7 +130,9 @@ func (mm *MirrorManager) checkAllMirrors() {
 	}
 
 	wg.Wait()
-	log.Printf("Mirror health check completed, checked %d mirrors", len(urls))
+	if !mm.silent {
+		log.Printf("Mirror health check completed, checked %d mirrors", len(urls))
+	}
 }
 
 // checkMirror 检查单个镜像

@@ -11,7 +11,6 @@ import (
 
 	"github.com/jifanchn/go-scihub-mcp/internal/config"
 	"github.com/jifanchn/go-scihub-mcp/internal/downloader"
-	"github.com/jifanchn/go-scihub-mcp/internal/mcp"
 	"github.com/jifanchn/go-scihub-mcp/internal/mcpserver"
 	"github.com/jifanchn/go-scihub-mcp/internal/mirror"
 	"github.com/jifanchn/go-scihub-mcp/internal/proxy"
@@ -69,6 +68,7 @@ func main() {
 	}
 
 	command := args[0]
+
 	switch command {
 	case "fetch":
 		runFetch(args[1:], flags)
@@ -78,8 +78,6 @@ func main() {
 		runMCPServer(args[1:], flags)
 	case "status":
 		runStatus(args[1:], flags)
-	case "test":
-		runTest(args[1:], flags)
 	default:
 		fmt.Printf("Unknown command: %s\n", command)
 		printHelp()
@@ -97,8 +95,11 @@ func runService(flags *GlobalFlags) {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
+	// 强制使用SSE模式
+	cfg.MCP.Transport = "sse"
+
 	// 创建组件
-	_, mm, _, server, err := createComponents(cfg)
+	_, mm, dl, err := createComponents(cfg, false)
 	if err != nil {
 		log.Fatalf("Failed to create components: %v", err)
 	}
@@ -107,16 +108,24 @@ func runService(flags *GlobalFlags) {
 	mm.Start()
 	defer mm.Stop()
 
+	// 创建MCP服务器
+	mcpServer := mcpserver.NewMCPServer(dl, mm, mcpserver.TransportSSE, cfg.MCP.Host, cfg.MCP.Port, "/sse")
+
 	// 设置信号处理
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	// 启动MCP服务器
 	go func() {
-		if err := server.Start(); err != nil {
+		log.Printf("Starting MCP SSE server on %s:%d", cfg.MCP.Host, cfg.MCP.Port)
+		if err := mcpServer.Start(); err != nil {
 			log.Fatalf("Failed to start MCP server: %v", err)
 		}
 	}()
+
+	log.Printf("MCP SSE server started on http://%s:%d", cfg.MCP.Host, cfg.MCP.Port)
+	log.Printf("SSE endpoint: http://%s:%d/sse", cfg.MCP.Host, cfg.MCP.Port)
+	log.Printf("Message endpoint: http://%s:%d/message", cfg.MCP.Host, cfg.MCP.Port)
 
 	// 等待信号
 	<-sigChan
@@ -145,7 +154,7 @@ func runFetch(args []string, flags *GlobalFlags) {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	_, mm, dl, _, err := createComponents(cfg)
+	_, mm, dl, err := createComponents(cfg, false)
 	if err != nil {
 		log.Fatalf("Failed to create components: %v", err)
 	}
@@ -220,10 +229,7 @@ func runHTTPAPI(args []string, flags *GlobalFlags) {
 // runMCPServer 运行真正的MCP协议服务器
 func runMCPServer(args []string, flags *GlobalFlags) {
 	mcpFlags := flag.NewFlagSet("mcp", flag.ExitOnError)
-	transport := mcpFlags.String("transport", "", "Transport mode: stdio, sse (default: from config)")
 	mcpFlags.Parse(args)
-
-	log.Println("Starting MCP protocol server...")
 
 	// 加载配置
 	cfg, err := loadConfigWithFlags(flags)
@@ -231,13 +237,11 @@ func runMCPServer(args []string, flags *GlobalFlags) {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	// 覆盖传输模式（如果在命令行指定）
-	if *transport != "" {
-		cfg.MCP.Transport = *transport
-	}
+	// 强制使用SSE模式
+	cfg.MCP.Transport = "sse"
 
 	// 创建组件
-	_, mm, dl, _, err := createComponents(cfg)
+	_, mm, dl, err := createComponents(cfg, false)
 	if err != nil {
 		log.Fatalf("Failed to create components: %v", err)
 	}
@@ -246,23 +250,30 @@ func runMCPServer(args []string, flags *GlobalFlags) {
 	mm.Start()
 	defer mm.Stop()
 
-	// 确定传输模式
-	var transportMode mcpserver.TransportMode
-	switch cfg.MCP.Transport {
-	case "sse":
-		transportMode = mcpserver.TransportSSE
-	case "stdio":
-		transportMode = mcpserver.TransportStdio
-	default:
-		log.Printf("Invalid transport mode '%s', defaulting to stdio", cfg.MCP.Transport)
-		transportMode = mcpserver.TransportStdio
-	}
+	// 创建MCP服务器
+	mcpServer := mcpserver.NewMCPServer(dl, mm, mcpserver.TransportSSE, cfg.MCP.Host, cfg.MCP.Port, "/sse")
 
-	// 创建并启动MCP服务器
-	mcpServer := mcpserver.NewMCPServer(dl, mm, transportMode, cfg.MCP.Host, cfg.MCP.Port, cfg.MCP.SSEPath)
-	if err := mcpServer.Start(); err != nil {
-		log.Fatalf("Failed to start MCP server: %v", err)
-	}
+	// 设置信号处理
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	// 启动MCP服务器
+	go func() {
+		log.Printf("Starting MCP SSE server on %s:%d", cfg.MCP.Host, cfg.MCP.Port)
+		if err := mcpServer.Start(); err != nil {
+			log.Fatalf("Failed to start MCP server: %v", err)
+		}
+	}()
+
+	log.Printf("MCP SSE server started on http://%s:%d", cfg.MCP.Host, cfg.MCP.Port)
+	log.Printf("SSE endpoint: http://%s:%d/sse", cfg.MCP.Host, cfg.MCP.Port)
+	log.Printf("Message endpoint: http://%s:%d/message", cfg.MCP.Host, cfg.MCP.Port)
+
+	// 等待信号
+	<-sigChan
+	log.Println("Received stop signal, shutting down MCP server...")
+
+	// 清理资源
 }
 
 // runStatus 运行状态检查命令
@@ -272,7 +283,7 @@ func runStatus(args []string, flags *GlobalFlags) {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	_, mm, _, _, err := createComponents(cfg)
+	_, mm, _, err := createComponents(cfg, false)
 	if err != nil {
 		log.Fatalf("Failed to create components: %v", err)
 	}
@@ -297,42 +308,6 @@ func runStatus(args []string, flags *GlobalFlags) {
 		if mirror.ErrorMessage != "" {
 			fmt.Printf("  Error: %s\n", mirror.ErrorMessage)
 		}
-	}
-}
-
-// runTest 运行镜像测试命令
-func runTest(args []string, flags *GlobalFlags) {
-	testFlags := flag.NewFlagSet("test", flag.ExitOnError)
-	mirrorURL := testFlags.String("mirror", "", "Mirror URL to test")
-
-	testFlags.Parse(args)
-
-	if *mirrorURL == "" {
-		fmt.Println("Must specify --mirror")
-		testFlags.Usage()
-		os.Exit(1)
-	}
-
-	cfg, err := loadConfigWithFlags(flags)
-	if err != nil {
-		log.Fatalf("Failed to load configuration: %v", err)
-	}
-
-	_, mm, _, _, err := createComponents(cfg)
-	if err != nil {
-		log.Fatalf("Failed to create components: %v", err)
-	}
-
-	fmt.Printf("Testing mirror: %s\n", *mirrorURL)
-	mirror, err := mm.TestMirror(*mirrorURL)
-	if err != nil {
-		log.Fatalf("Test failed: %v", err)
-	}
-
-	fmt.Printf("Test result: %s\n", mirror.Status)
-	fmt.Printf("Response time: %v\n", mirror.ResponseTime)
-	if mirror.ErrorMessage != "" {
-		fmt.Printf("Error message: %s\n", mirror.ErrorMessage)
 	}
 }
 
@@ -367,23 +342,20 @@ func loadConfigWithFlags(flags *GlobalFlags) (*config.Config, error) {
 }
 
 // createComponents 创建所有组件
-func createComponents(cfg *config.Config) (*proxy.ProxyManager, *mirror.MirrorManager, *downloader.Downloader, *mcp.Server, error) {
+func createComponents(cfg *config.Config, silent bool) (*proxy.ProxyManager, *mirror.MirrorManager, *downloader.Downloader, error) {
 	// 创建代理管理器
 	pm, err := proxy.NewProxyManager(cfg.Proxy.Enabled, cfg.Proxy.GetProxyURL())
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("Failed to create proxy manager: %w", err)
+		return nil, nil, nil, fmt.Errorf("Failed to create proxy manager: %w", err)
 	}
 
 	// 创建镜像管理器
-	mm := mirror.NewMirrorManager(cfg.Mirrors, pm, cfg.HealthCheck.Interval, cfg.HealthCheck.Timeout)
+	mm := mirror.NewMirrorManager(cfg.Mirrors, pm, cfg.HealthCheck.Interval, cfg.HealthCheck.Timeout, silent)
 
 	// 创建下载器
 	dl := downloader.NewDownloader(mm, pm, cfg.Download.CacheDir, cfg.Download.MaxRetries, cfg.Download.Timeout)
 
-	// 创建HTTP API服务器（兼容MCP接口格式）
-	server := mcp.NewServer(dl, mm, cfg.MCP.Host, cfg.MCP.Port)
-
-	return pm, mm, dl, server, nil
+	return pm, mm, dl, nil
 }
 
 // copyFile 复制文件
@@ -421,9 +393,8 @@ func printHelp() {
 命令:
   fetch       下载论文文件
   api         启动HTTP API服务 (兼容MCP格式的REST API)
-  mcp         启动真正的MCP协议服务器 (标准STDIO通信)
+  mcp         启动MCP协议服务器 (SSE模式)
   status      检查镜像状态
-  test        测试特定镜像
 
 全局选项 (适用于所有命令):
   --config string              配置文件路径
@@ -431,8 +402,8 @@ func printHelp() {
   --proxy-host string          代理主机 (默认: 127.0.0.1)
   --proxy-port int             代理端口 (默认: 3080)
   --health-interval duration   健康检查间隔 (默认: 30m)
-  --mcp-host string            HTTP API服务主机 (默认: 0.0.0.0)
-  --mcp-port int               HTTP API服务端口 (默认: 8080)
+  --mcp-host string            MCP服务主机 (默认: 0.0.0.0)
+  --mcp-port int               MCP服务端口 (默认: 8080)
   --version                    显示版本信息
   --help                       显示此帮助信息
 
@@ -446,12 +417,6 @@ api 命令选项:
   --port int                   HTTP API端口 (覆盖全局 --mcp-port)
   --host string                HTTP API主机 (覆盖全局 --mcp-host)
 
-mcp 命令选项:
-  --transport string           传输模式: stdio, sse (默认: 从配置文件)
-
-test 命令选项:
-  --mirror string              要测试的镜像URL
-
 配置优先级:
   命令行参数 > 配置文件 > 默认值
 
@@ -459,21 +424,16 @@ test 命令选项:
   api: 启动HTTP REST API服务，可通过curl或浏览器访问
            支持 /fetch, /download/, /mirrors, /status 等端点
            
-  mcp:     启动标准MCP协议服务器，支持多种传输模式：
-           - stdio: 通过标准输入输出通信 (默认)
-           - sse: 通过Server-Sent Events HTTP服务器通信
-           提供工具: download_paper, check_mirror_status, test_mirror
+  mcp:     启动MCP协议服务器，使用Server-Sent Events HTTP通信：
+           提供工具: download_paper, check_mirror_status, test_mirror, list_available_mirrors
            提供资源: scihub://cache, scihub://mirrors/status, scihub://papers/{filename}
 
 示例:
   # 启动HTTP API服务（默认模式）
   scihub-mcp
 
-  # 启动MCP协议服务器（STDIO模式）
-  scihub-mcp mcp
-
   # 启动MCP协议服务器（SSE模式）
-  scihub-mcp mcp --transport sse
+  scihub-mcp mcp
 
   # 下载论文通过DOI
   scihub-mcp fetch --doi "10.1038/nature12373"
@@ -484,14 +444,14 @@ test 命令选项:
   # 检查镜像状态
   scihub-mcp status
 
-  # 测试特定镜像
-  scihub-mcp test --mirror "https://sci-hub.ru"
-
   # 使用自定义配置文件
-  scihub-mcp --config ./my-config.yaml mcp --transport sse
+  scihub-mcp --config ./config.yaml mcp
 
   # 启动MCP SSE服务器在自定义端口
-  scihub-mcp --mcp-port 9090 mcp --transport sse
+  scihub-mcp --mcp-port 9090 mcp
+
+  # 使用代理启动服务
+  scihub-mcp --proxy-enabled --proxy-host 127.0.0.1 --proxy-port 3080 mcp
 
 更多信息请访问: https://github.com/jifanchn/go-scihub-mcp
 `, version)

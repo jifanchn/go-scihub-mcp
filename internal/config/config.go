@@ -38,7 +38,7 @@ type HealthConfig struct {
 type MCPConfig struct {
 	Port      int    `yaml:"port" json:"port"`
 	Host      string `yaml:"host" json:"host"`
-	Transport string `yaml:"transport" json:"transport"` // stdio, sse
+	Transport string `yaml:"transport" json:"transport"` // sse
 	SSEPath   string `yaml:"sse_path" json:"sse_path"`   // SSE端点路径，默认/sse
 }
 
@@ -78,8 +78,8 @@ func DefaultConfig() *Config {
 		MCP: MCPConfig{
 			Port:      8080,
 			Host:      "0.0.0.0",
-			Transport: "stdio", // 默认使用stdio
-			SSEPath:   "/sse",  // SSE端点路径
+			Transport: "sse",  // 默认使用sse
+			SSEPath:   "/sse", // SSE端点路径
 		},
 		Download: DownloadConfig{
 			CacheDir:   "./cache",
@@ -200,8 +200,8 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("MCP端口无效: %d", c.MCP.Port)
 	}
 
-	if c.MCP.Transport != "stdio" && c.MCP.Transport != "sse" {
-		return fmt.Errorf("不支持的传输模式: %s (支持: stdio, sse)", c.MCP.Transport)
+	if c.MCP.Transport != "sse" {
+		return fmt.Errorf("不支持的传输模式: %s (仅支持: sse)", c.MCP.Transport)
 	}
 
 	if c.Download.MaxRetries < 0 {

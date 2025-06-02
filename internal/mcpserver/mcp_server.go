@@ -17,8 +17,7 @@ import (
 type TransportMode string
 
 const (
-	TransportStdio TransportMode = "stdio"
-	TransportSSE   TransportMode = "sse"
+	TransportSSE TransportMode = "sse"
 )
 
 // MCPServer 真正的MCP协议服务器
@@ -52,8 +51,9 @@ func NewMCPServer(d *downloader.Downloader, mm *mirror.MirrorManager, transport 
 		ssePath:       ssePath,
 	}
 
-	// 只注册工具，暂时不注册资源
+	// 注册工具和资源
 	mcpServer.registerTools()
+	mcpServer.registerResources()
 
 	return mcpServer
 }
@@ -349,9 +349,6 @@ func (m *MCPServer) handlePaperResource(ctx context.Context, request mcp.ReadRes
 // Start 启动MCP服务器
 func (m *MCPServer) Start() error {
 	switch m.transport {
-	case TransportStdio:
-		log.Println("Starting MCP protocol server with stdio transport...")
-		return server.ServeStdio(m.server)
 	case TransportSSE:
 		log.Printf("Starting MCP protocol server with SSE transport on %s:%d%s...", m.host, m.port, m.ssePath)
 		return m.startSSEServer()

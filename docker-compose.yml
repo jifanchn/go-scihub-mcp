@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  scihub-mcp:
+    build: .
+    container_name: scihub-mcp
+    ports:
+      - "8088:8088"
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./cache:/app/cache
+      - ./configs:/app/configs:ro
+    command: >
+      ./scihub-mcp 
+      --mcp-host 0.0.0.0 
+      --mcp-port 8088 
+      --proxy-enabled 
+      --proxy-host host.docker.internal 
+      --proxy-port 3080 
+      mcp
+    restart: unless-stopped
+    networks:
+      - scihub-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8088/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  scihub-network:
+    driver: bridge 

@@ -10,8 +10,9 @@ A Sci-Hub mirror management and file download tool written in Go, with MCP (Mode
 - 🔄 Automatic mirror availability detection and updates
 - 🌐 SOCKS5 proxy support
 - 📁 File download and caching
-- 🔗 MCP-compatible HTTP API service
+- 🔗 MCP-compatible SSE API service
 - ⚙️ Flexible command-line configuration with clear priority system
+- 🐳 Docker support with docker-compose
 
 ## Installation
 
@@ -22,6 +23,17 @@ git clone https://github.com/jifanchn/go-scihub-mcp.git
 cd go-scihub-mcp
 go mod tidy
 go build -o scihub-mcp ./cmd/scihub-mcp
+```
+
+### Docker
+
+```bash
+# Using docker-compose (recommended)
+docker-compose up -d
+
+# Or build and run manually
+docker build -t scihub-mcp .
+docker run -d -p 8088:8088 --name scihub-mcp scihub-mcp
 ```
 
 ### Binary Download
@@ -79,6 +91,8 @@ health_check:
 mcp:
   port: 8080
   host: "0.0.0.0"
+  transport: "sse"  # SSE mode only
+  sse_path: "/sse"
   
 # Download configuration
 download:
@@ -152,42 +166,20 @@ scihub-mcp --mcp-host 0.0.0.0 --mcp-port 9090 [command]
 ./scihub-mcp --proxy-enabled api --port 9090
 ```
 
-### 4. MCP Protocol Service Mode
+### 4. MCP Protocol Service Mode (SSE)
 
-The MCP protocol server supports two transport modes:
-
-#### STDIO Transport Mode (Default)
-```bash
-# Start MCP protocol server (STDIO communication)
-./scihub-mcp mcp
-
-# Start with global proxy enabled
-./scihub-mcp --proxy-enabled mcp
-
-# Explicitly specify stdio mode
-./scihub-mcp mcp --transport stdio
-
-# MCP protocol communicates through STDIN/STDOUT
-# Example tool call:
-echo '{"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}' | ./scihub-mcp mcp
-
-# Example resource access:
-echo '{"jsonrpc": "2.0", "id": 2, "method": "resources/read", "params": {"uri": "scihub://cache"}}' | ./scihub-mcp mcp
-```
-
-#### SSE Transport Mode (Server-Sent Events)
 ```bash
 # Start MCP protocol server with SSE transport
-./scihub-mcp mcp --transport sse
+./scihub-mcp mcp
 
-# Start with custom port and SSE transport
-./scihub-mcp --mcp-port 9090 mcp --transport sse
+# Start with custom port
+./scihub-mcp --mcp-port 9090 mcp
 
-# Start with proxy enabled and SSE transport
-./scihub-mcp --proxy-enabled mcp --transport sse
+# Start with proxy enabled
+./scihub-mcp --proxy-enabled --proxy-host 127.0.0.1 --proxy-port 3080 mcp
 
-# Use custom configuration file with SSE settings
-./scihub-mcp --config configs/config-sse.yaml mcp
+# Use custom configuration file
+./scihub-mcp --config configs/config.yaml mcp
 ```
 
 **SSE Mode Endpoints:**
@@ -211,70 +203,60 @@ echo '{"jsonrpc": "2.0", "id": 2, "method": "resources/read", "params": {"uri": 
 
 # Check with proxy enabled
 ./scihub-mcp --proxy-enabled status
-
-# Test specific mirror
-./scihub-mcp test --mirror "https://sci-hub.se"
 ```
+
+### 6. Docker Deployment
+
+```bash
+# Using docker-compose (recommended)
+docker-compose up -d
+
+# Check status
+docker-compose ps
+
+# View logs
+docker-compose logs -f
+
+# Stop service
+docker-compose down
+```
+
+The Docker service will:
+- Run on port 8088 (mapped to host)
+- Use SOCKS5 proxy at `127.0.0.1:3080` on the host
+- Persist cache data in `./cache` directory
+- Automatically restart unless stopped
 
 ## MCP Server Configuration
 
-To use the MCP protocol server with AI tools like Cursor, Claude Desktop, or other MCP clients, you need to configure the server in the client's settings. The server supports two transport modes:
-
-**STDIO Mode**: Direct process communication (recommended for local use)
-**SSE Mode**: HTTP-based communication (recommended for remote/web use)
+To use the MCP protocol server with AI tools like Cursor, Claude Desktop, or other MCP clients, configure the server using SSE transport mode.
 
 ### Cursor AI Configuration
 
-1. **Open Cursor Settings**:
-   - Press `Cmd/Ctrl + ,` to open settings
-   - Go to "Extensions" -> "MCP Servers" or search for "MCP"
+Create or edit your MCP configuration file (usually `~/.cursor/mcp_servers.json`):
 
-2. **Add SciHub-MCP Server**:
+```json
+{
+  "mcpServers": {
+    "scihub-mcp": {
+      "description": "SciHub MCP Server - SSE Mode",
+      "url": "http://localhost:8080/sse"
+    }
+  }
+}
+```
 
-   **STDIO Mode (Recommended for Local Use)**:
-   Create or edit your MCP configuration file (usually `~/.cursor/mcp_servers.json`):
-   ```json
-   {
-     "mcpServers": {
-       "scihub-mcp-stdio": {
-         "description": "SciHub MCP Server - STDIO Mode",
-         "command": "/path/to/scihub-mcp",
-         "args": ["--proxy-enabled", "--proxy-host", "127.0.0.1", "--proxy-port", "3080", "mcp", "--transport", "stdio"],
-         "env": {},
-         "cwd": "/path/to/working/directory"
-       }
-     }
-   }
-   ```
-
-   **SSE Mode (For Remote/Web Use)**:
-   ```json
-   {
-     "mcpServers": {
-       "scihub-mcp-sse": {
-         "description": "SciHub MCP Server - SSE Mode",
-         "url": "http://localhost:8080/sse"
-       }
-     }
-   }
-   ```
-
-   Or without proxy:
-   ```json
-   {
-     "mcpServers": {
-       "scihub-mcp-stdio": {
-         "command": "/path/to/scihub-mcp",
-         "args": ["mcp"],
-         "env": {},
-         "cwd": "/path/to/working/directory"
-       },
-       "scihub-mcp-sse": {
-         "url": "http://localhost:8080/sse"
-       }
-     }
-   }
-   ```
+For Docker deployment:
+```json
+{
+  "mcpServers": {
+    "scihub-mcp": {
+      "description": "SciHub MCP Server - Docker",
+      "url": "http://localhost:8088/sse"
+    }
+  }
+}
+```
 
 ### Claude Desktop Configuration
 
@@ -285,344 +267,130 @@ To use the MCP protocol server with AI tools like Cursor, Claude Desktop, or oth
 
 2. **Add Server Configuration**:
 
-   **STDIO Mode (Default)**:
-   ```json
-   {
-     "mcpServers": {
-       "scihub-mcp": {
-         "command": "/path/to/scihub-mcp",
-         "args": ["mcp"]
-       }
-     }
-   }
-   ```
+```json
+{
+  "mcpServers": {
+    "scihub-mcp": {
+      "url": "http://localhost:8080/sse"
+    }
+  }
+}
+```
 
-   **SSE Mode**:
-   ```json
-   {
-     "mcpServers": {
-       "scihub-mcp-sse": {
-         "url": "http://localhost:8080/sse"
-       }
-     }
-   }
-   ```
+For Docker deployment:
+```json
+{
+  "mcpServers": {
+    "scihub-mcp": {
+      "url": "http://localhost:8088/sse"
+    }
+  }
+}
+```
 
-   **Both Modes with Proxy Support**:
-   ```json
-   {
-     "mcpServers": {
-       "scihub-mcp-stdio": {
-         "command": "/path/to/scihub-mcp",
-         "args": ["--proxy-enabled", "--proxy-host", "127.0.0.1", "--proxy-port", "3080", "mcp", "--transport", "stdio"]
-       },
-       "scihub-mcp-sse": {
-         "url": "http://localhost:8080/sse"
-       }
-     }
-   }
-   ```
+## MCP Tools and Resources
 
-   Note: For SSE mode, you need to start the server separately:
-   ```bash
-   # Start SSE server in background
-   ./scihub-mcp --proxy-enabled mcp --transport sse &
-   ```
+The MCP server provides the following tools and resources:
 
-### Generic MCP Client Configuration
+### Available Tools
 
-For other MCP clients, use these settings:
+1. **download_paper**: Download scientific paper PDF files
+   - Parameters: `doi`, `url`, `title`, `output_path`
+   
+2. **check_mirror_status**: Check availability status of Sci-Hub mirrors
+   
+3. **test_mirror**: Test availability of a specific Sci-Hub mirror
+   - Parameters: `mirror_url`
+   
+4. **list_available_mirrors**: Get list of currently available Sci-Hub mirrors
 
-- **Server Command**: `/path/to/scihub-mcp mcp`
-- **Communication**: STDIO (standard input/output)
-- **Protocol**: JSON-RPC 2.0 with MCP extensions
-- **Environment Variables**: None required
-- **Working Directory**: Directory containing the executable
+### Available Resources
+
+1. **scihub://cache**: List of cached paper files
+2. **scihub://mirrors/status**: Real-time status of all Sci-Hub mirrors  
+3. **scihub://papers/{filename}**: Access cached paper PDF files
 
 ### Testing MCP Connection
 
-You can test the MCP server manually:
+You can test the SSE server:
 
 ```bash
-# Test server startup and tool listing
-echo '{"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}' | ./scihub-mcp mcp
-
-# Expected response should show available tools like:
-# {"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"download_paper",...}]}}
-```
-
-### Configuration Examples
-
-For your convenience, we provide example configuration files in the `configs/` directory:
-
-- [`configs/cursor_mcp_config.json`](configs/cursor_mcp_config.json) - Basic Cursor configuration
-- [`configs/cursor_mcp_config_with_proxy.json`](configs/cursor_mcp_config_with_proxy.json) - Cursor with proxy
-- [`configs/claude_desktop_config.json`](configs/claude_desktop_config.json) - Claude Desktop configuration
-
-**Basic Configuration** (no proxy):
-```json
-{
-  "mcpServers": {
-    "scihub-mcp": {
-      "command": "/usr/local/bin/scihub-mcp",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-**With Proxy** (for users in restricted networks):
-```json
-{
-  "mcpServers": {
-    "scihub-mcp": {
-      "command": "/usr/local/bin/scihub-mcp",
-      "args": ["--proxy-enabled", "--proxy-host", "127.0.0.1", "--proxy-port", "3080", "mcp"]
-    }
-  }
-}
-```
-
-**With Custom Config File**:
-```json
-{
-  "mcpServers": {
-    "scihub-mcp": {
-      "command": "/usr/local/bin/scihub-mcp",
-      "args": ["--config", "/path/to/custom-config.yaml", "mcp"],
-      "cwd": "/path/to/cache/directory"
-    }
-  }
-}
-```
-
-### Troubleshooting MCP Setup
-
-1. **Server Not Starting**:
-   - Check if the binary path is correct
-   - Ensure the binary has execution permissions
-   - Verify the working directory exists
-
-2. **Proxy Issues**:
-   - Test proxy connectivity manually
-   - Check proxy server is running on specified host/port
-   - Try without proxy first to isolate issues
-
-3. **Tool/Resource Not Found**:
-   - Restart the MCP client after configuration changes
-   - Check server logs for any startup errors
-   - Verify configuration JSON syntax is valid
-
-4. **Permission Errors**:
-   - Ensure cache directory is writable
-   - Check file permissions for the binary and config files
-
-## Service Types
-
-This tool provides two distinct service modes:
-
-### HTTP API Service (`api`)
-- **Type**: REST API over HTTP
-- **Communication**: Standard HTTP requests/responses
-- **Use Case**: Web applications, curl commands, browser access
-- **Endpoints**: `/health`, `/fetch`, `/download/{filename}`, `/mirrors`, `/status`
-- **Format**: JSON responses with standard HTTP status codes
-
-**Example HTTP API Usage:**
-```bash
-# Health check
+# Check health endpoint
 curl http://localhost:8080/health
 
-# Download paper
-curl -X POST http://localhost:8080/fetch \
-  -H "Content-Type: application/json" \
-  -d '{"doi": "10.1038/nature12373"}'
-
-# Download file directly
-curl http://localhost:8080/download/paper.pdf --output paper.pdf
-```
-
-### MCP Protocol Service (`mcp`)
-- **Type**: Model Context Protocol over multiple transports
-- **Transport Modes**: 
-  - **STDIO**: JSON-RPC 2.0 messages via STDIN/STDOUT (default)
-  - **SSE**: JSON-RPC 2.0 messages via Server-Sent Events over HTTP
-- **Use Case**: LLM applications, MCP clients, Cursor AI integration
-- **Features**: Tools, Resources, and Templates
-- **Format**: Standard MCP protocol messages
-
-**Transport Mode Comparison:**
-
-| Feature | STDIO Mode | SSE Mode |
-|---------|------------|----------|
-| Communication | Process pipes | HTTP/SSE |
-| Use Case | Local CLI tools | Web/Remote apps |
-| Setup | Direct execution | Server + Client |
-| Concurrency | Single session | Multiple sessions |
-| Network | Not required | HTTP network |
-| Firewall | Not affected | May need port access |
-
-**Available MCP Tools:**
-- `download_paper` - Download scientific papers
-- `check_mirror_status` - Check mirror availability
-- `test_mirror` - Test specific mirror
-- `list_available_mirrors` - List available mirrors
-
-**Available MCP Resources:**
-- `scihub://cache` - List cached papers (JSON)
-- `scihub://mirrors/status` - Mirror status information (JSON)
-- `scihub://papers/{filename}` - Access specific paper files (PDF)
-
-**Example MCP Usage (STDIO Mode):**
-```bash
-# List available tools
-echo '{"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}' | ./scihub-mcp mcp
-
-# Call download tool
-echo '{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "download_paper", "arguments": {"doi": "10.1038/nature12373"}}}' | ./scihub-mcp mcp
-
-# List resources
-echo '{"jsonrpc": "2.0", "id": 3, "method": "resources/list", "params": {}}' | ./scihub-mcp mcp
-
-# Read cache resource
-echo '{"jsonrpc": "2.0", "id": 4, "method": "resources/read", "params": {"uri": "scihub://cache"}}' | ./scihub-mcp mcp
-```
-
-**Example MCP Usage (SSE Mode):**
-```bash
-# Start the SSE server
-./scihub-mcp mcp --transport sse &
-
-# Connect to SSE endpoint for event stream
-curl -N http://localhost:8080/sse
-
-# Send JSON-RPC messages to message endpoint
-curl -X POST http://localhost:8080/message \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}'
+# For Docker deployment
+curl http://localhost:8088/health
 ```
 
 ## API Endpoints
 
-When running in HTTP API mode (`api`), the following HTTP endpoints are available:
+### HTTP API Endpoints
 
-### GET /health
-Check service health status
+- `GET /health` - Health check
+- `GET /status` - Mirror status
+- `GET /mirrors` - Available mirrors list
+- `POST /download` - Download paper
+- `GET /cache` - List cached files
 
-```bash
-curl http://localhost:8080/health
-```
+### MCP SSE Endpoints
 
-### POST /fetch
-Download paper files with JSON response
-
-```bash
-curl -X POST http://localhost:8080/fetch \
-  -H "Content-Type: application/json" \
-  -d '{"doi": "10.1038/nature12373"}'
-```
-
-Request format:
-```json
-{
-  "doi": "10.1038/nature12373",          // DOI (optional)
-  "url": "https://example.com/paper",    // Original URL (optional)
-  "title": "Paper Title"                 // Paper title (optional)
-}
-```
-
-Response format:
-```json
-{
-  "success": true,
-  "message": "File downloaded successfully",
-  "data": {
-    "filename": "nature12373.pdf",
-    "size": 1024000,
-    "mirror_used": "https://sci-hub.se",
-    "download_url": "https://sci-hub.se/downloads/...",
-    "cached": false,
-    "download_link": "/download/nature12373.pdf"
-  }
-}
-```
-
-### GET /download/{filename}
-Download file by filename
-
-```bash
-curl http://localhost:8080/download/nature12373.pdf --output paper.pdf
-```
-
-### GET /mirrors
-Get current available mirror status
-
-```bash
-curl http://localhost:8080/mirrors
-```
-
-### GET /status
-Get system status
-
-```bash
-curl http://localhost:8080/status
-```
-
-## How It Works
-
-1. **Mirror Management**: The program loads the configured mirror list at startup, with background goroutines periodically checking each mirror's availability
-2. **Smart Selection**: Automatically selects the fastest available mirror when downloading
-3. **Proxy Support**: Supports SOCKS5 proxy for use in network-restricted environments
-4. **Caching Mechanism**: Downloaded files are cached locally to avoid duplicate downloads
-5. **Error Handling**: Features retry mechanisms and detailed error logging
-6. **Flexible Configuration**: Clear priority system ensures predictable behavior
+- `GET /sse` - SSE stream for MCP communication
+- `POST /message` - Send messages to MCP server
+- `GET /health` - Health check
 
 ## Development
 
-### Project Structure
-
-```
-go-scihub-mcp/
-├── cmd/scihub-mcp/     # Main program entry
-├── internal/           # Internal packages
-│   ├── config/         # Configuration management
-│   ├── mirror/         # Mirror management
-│   ├── downloader/     # Downloader
-│   ├── mcp/           # MCP-compatible HTTP API service
-│   └── proxy/         # Proxy management
-├── pkg/               # Public packages
-├── configs/           # Example configuration files
-├── docs/             # Documentation
-└── README.md
-```
-
-### Running Tests
-
-```bash
-go test ./...
-```
-
-### Building Release Version
+### Building
 
 ```bash
 # Build for current platform
 make build
 
-# Cross compile
+# Build for all platforms
 make build-all
 
-# Create release package
-make release
+# Build with Docker
+make docker
 ```
 
-## License
+### Testing
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+```bash
+# Run unit tests
+make test
+
+# Run with coverage
+make coverage
+```
+
+### Development Mode
+
+```bash
+# Start HTTP API server
+make dev
+
+# Start MCP server
+make dev-mcp
+```
 
 ## Contributing
 
-Issues and Pull Requests are welcome!
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Acknowledgments
+
+- [Sci-Hub](https://sci-hub.se/) for providing access to scientific literature
+- [MCP](https://github.com/modelcontextprotocol) for the Model Context Protocol specification
+- All contributors and users of this project
 
 ## Disclaimer
 
-This tool is intended for academic research purposes only. Please ensure your usage complies with local laws and regulations and the terms of service of relevant websites.
+This tool is for educational and research purposes only. Users are responsible for ensuring compliance with applicable laws and regulations in their jurisdiction.

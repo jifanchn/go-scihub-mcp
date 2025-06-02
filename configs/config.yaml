@@ -32,12 +32,11 @@ health_check:
 mcp:
   port: 8080
   host: "0.0.0.0"     # 监听所有接口
-  transport: "stdio"  # 传输模式: stdio (标准输入输出), sse (服务器推送事件)
-  sse_path: "/sse"    # SSE端点路径 (仅sse模式)
+  transport: "sse"    # 传输模式: sse (服务器推送事件)
+  sse_path: "/sse"    # SSE端点路径
   # SSE模式说明：
-  # - stdio: 通过标准输入输出进行通信，适用于命令行工具和直接调用
-  # - sse: 通过HTTP Server-Sent Events进行通信，适用于Web应用和远程访问
-  # SSE模式下，服务器将监听指定的host:port，客户端可通过HTTP连接到SSE端点
+  # 通过HTTP Server-Sent Events进行通信，适用于Web应用和远程访问
+  # 服务器将监听指定的host:port，客户端可通过HTTP连接到SSE端点
 
 # 下载配置
 download:

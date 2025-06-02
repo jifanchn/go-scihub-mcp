@@ -1,6 +1,6 @@
 # SciHub-MCP Makefile
 
-.PHONY: help build test clean install release docker docs lint format check-deps
+.PHONY: help build clean install release docker docs lint format check-deps
 
 # 变量定义
 BINARY_NAME := scihub-mcp
@@ -54,24 +54,6 @@ build-all: ## 交叉编译所有平台
 test: ## 运行 Go 单元测试
 	@echo "运行单元测试..."
 	go test -v ./...
-
-test-integration: build ## 运行集成测试
-	@echo "运行集成测试..."
-	@./scripts/test-mcp.sh
-
-test-stdio: build ## 仅测试 STDIO 模式
-	@echo "测试 STDIO 模式..."
-	@./scripts/test-mcp.sh --stdio
-
-test-sse: build ## 仅测试 SSE 模式
-	@echo "测试 SSE 模式..."
-	@./scripts/test-mcp.sh --sse
-
-test-api: build ## 仅测试 HTTP API 模式
-	@echo "测试 HTTP API 模式..."
-	@./scripts/test-mcp.sh --api
-
-test-all: test test-integration ## 运行所有测试
 
 clean: ## 清理构建文件
 	@echo "清理构建文件..."
@@ -168,10 +150,6 @@ dev-mcp: build ## 开发模式：启动 MCP 服务器
 	@echo "启动 MCP 开发服务器..."
 	@./$(BINARY_NAME) --config configs/config.yaml mcp
 
-dev-sse: build ## 开发模式：启动 SSE MCP 服务器
-	@echo "启动 SSE MCP 开发服务器..."
-	@./$(BINARY_NAME) --config configs/config-sse.yaml mcp --transport sse
-
 # 性能测试
 benchmark: build ## 运行性能测试
 	@echo "运行性能测试..."
@@ -183,39 +161,15 @@ quick-start: build ## 快速开始：构建并显示帮助
 	@echo "=============="
 	@echo "1. 配置文件已准备好："
 	@echo "   - configs/config.yaml (默认配置)"
-	@echo "   - configs/config-sse.yaml (SSE 模式配置)"
 	@echo ""
 	@echo "2. 运行测试："
-	@echo "   make test-all"
+	@echo "   make test"
 	@echo ""
 	@echo "3. 启动服务："
 	@echo "   - HTTP API: make dev"
-	@echo "   - MCP STDIO: make dev-mcp"
-	@echo "   - MCP SSE: make dev-sse"
+	@echo "   - MCP SSE: make dev-mcp"
 	@echo ""
 	@echo "4. 下载论文："
 	@echo "   ./$(BINARY_NAME) fetch --doi \"10.1038/nature12373\""
 	@echo ""
-	@./$(BINARY_NAME) --help
-
-# CI/CD 相关
-ci: clean format vet lint test build ## CI 流水线：格式化、检查、测试、构建
-	@echo "CI 流水线完成"
-
-# 显示构建信息
-info: ## 显示构建信息
-	@echo "构建信息:"
-	@echo "========="
-	@echo "包名: $(PACKAGE)"
-	@echo "版本: $(VERSION)"
-	@echo "提交: $(COMMIT)"
-	@echo "时间: $(BUILD_TIME)"
-	@echo "Go 版本: $(shell go version)"
-
-# 创建示例配置
-config: ## 创建示例配置文件
-	@echo "创建示例配置文件..."
-	@mkdir -p ~/.config/scihub-mcp/
-	@cp configs/config.yaml ~/.config/scihub-mcp/config.yaml
-	@echo "配置文件已复制到: ~/.config/scihub-mcp/config.yaml"
-	@echo "你可以编辑此文件来自定义配置" 
+	@./$(BINARY_NAME) --help 

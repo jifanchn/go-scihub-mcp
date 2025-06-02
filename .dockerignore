@@ -1,0 +1,41 @@
+# 构建输出
+build/
+scihub-mcp
+*.exe
+
+# 缓存和日志
+cache/
+logs/
+*.log
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+
+# 文档
+docs/
+*.md
+LICENSE
+
+# 临时文件
+*.tmp
+*.temp
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# 测试覆盖率
+coverage.out
+coverage.html
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore 

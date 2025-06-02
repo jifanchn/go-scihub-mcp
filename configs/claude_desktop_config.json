@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "scihub-mcp": {
-      "command": "/usr/local/bin/scihub-mcp",
-      "args": ["mcp"]
-    }
-  }
-} 
