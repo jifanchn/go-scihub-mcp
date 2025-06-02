@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "scihub-mcp": {
+      "command": "/path/to/scihub-mcp",
+      "args": ["mcp"],
+      "env": {},
+      "cwd": "/path/to/working/directory"
+    }
+  }
+} 

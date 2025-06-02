@@ -1,0 +1,40 @@
+# SciHub-MCP 配置文件示例
+
+# Sci-Hub 镜像列表
+mirrors:
+  - "https://sci-hub.ru"
+  - "https://sci-hub.se"
+  - "https://sci-hub.st"
+  - "https://sci-hub.box"
+  - "https://sci-hub.red"
+  - "https://sci-hub.al"
+  - "https://sci-hub.ee"
+  - "https://sci-hub.lu"
+  - "https://sci-hub.ren"
+  - "https://sci-hub.shop"
+  - "https://sci-hub.vg"
+
+# 代理配置
+proxy:
+  enabled: false
+  type: "socks5"      # 支持 socks5, http
+  host: "127.0.0.1"
+  port: 3080
+  username: ""        # 可选：代理用户名
+  password: ""        # 可选：代理密码
+
+# 健康检查配置
+health_check:
+  interval: "30m"     # 检查间隔：30分钟
+  timeout: "10s"      # 请求超时：10秒
+
+# MCP 服务配置
+mcp:
+  port: 8080
+  host: "0.0.0.0"     # 监听所有接口
+
+# 下载配置
+download:
+  cache_dir: "./cache"    # 缓存目录
+  max_retries: 3         # 最大重试次数
+  timeout: "60s"         # 下载超时时间 

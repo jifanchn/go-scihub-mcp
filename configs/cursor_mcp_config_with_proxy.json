@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "scihub-mcp": {
+      "command": "/path/to/scihub-mcp",
+      "args": ["--proxy-enabled", "--proxy-host", "127.0.0.1", "--proxy-port", "3080", "mcp"],
+      "env": {},
+      "cwd": "/path/to/working/directory"
+    }
+  }
+} 
