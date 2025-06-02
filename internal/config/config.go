@@ -36,8 +36,10 @@ type HealthConfig struct {
 
 // MCPConfig MCP服务配置
 type MCPConfig struct {
-	Port int    `yaml:"port" json:"port"`
-	Host string `yaml:"host" json:"host"`
+	Port      int    `yaml:"port" json:"port"`
+	Host      string `yaml:"host" json:"host"`
+	Transport string `yaml:"transport" json:"transport"` // stdio, sse
+	SSEPath   string `yaml:"sse_path" json:"sse_path"`   // SSE端点路径，默认/sse
 }
 
 // DownloadConfig 下载配置
@@ -74,8 +76,10 @@ func DefaultConfig() *Config {
 			Timeout:  10 * time.Second,
 		},
 		MCP: MCPConfig{
-			Port: 8080,
-			Host: "0.0.0.0",
+			Port:      8080,
+			Host:      "0.0.0.0",
+			Transport: "stdio", // 默认使用stdio
+			SSEPath:   "/sse",  // SSE端点路径
 		},
 		Download: DownloadConfig{
 			CacheDir:   "./cache",
@@ -194,6 +198,10 @@ func (c *Config) Validate() error {
 
 	if c.MCP.Port <= 0 || c.MCP.Port > 65535 {
 		return fmt.Errorf("MCP端口无效: %d", c.MCP.Port)
+	}
+
+	if c.MCP.Transport != "stdio" && c.MCP.Transport != "sse" {
+		return fmt.Errorf("不支持的传输模式: %s (支持: stdio, sse)", c.MCP.Transport)
 	}
 
 	if c.Download.MaxRetries < 0 {

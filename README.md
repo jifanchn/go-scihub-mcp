@@ -154,12 +154,18 @@ scihub-mcp --mcp-host 0.0.0.0 --mcp-port 9090 [command]
 
 ### 4. MCP Protocol Service Mode
 
+The MCP protocol server supports two transport modes:
+
+#### STDIO Transport Mode (Default)
 ```bash
 # Start MCP protocol server (STDIO communication)
 ./scihub-mcp mcp
 
 # Start with global proxy enabled
 ./scihub-mcp --proxy-enabled mcp
+
+# Explicitly specify stdio mode
+./scihub-mcp mcp --transport stdio
 
 # MCP protocol communicates through STDIN/STDOUT
 # Example tool call:
@@ -168,6 +174,34 @@ echo '{"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}' | ./sci
 # Example resource access:
 echo '{"jsonrpc": "2.0", "id": 2, "method": "resources/read", "params": {"uri": "scihub://cache"}}' | ./scihub-mcp mcp
 ```
+
+#### SSE Transport Mode (Server-Sent Events)
+```bash
+# Start MCP protocol server with SSE transport
+./scihub-mcp mcp --transport sse
+
+# Start with custom port and SSE transport
+./scihub-mcp --mcp-port 9090 mcp --transport sse
+
+# Start with proxy enabled and SSE transport
+./scihub-mcp --proxy-enabled mcp --transport sse
+
+# Use custom configuration file with SSE settings
+./scihub-mcp --config configs/config-sse.yaml mcp
+```
+
+**SSE Mode Endpoints:**
+- SSE Stream: `http://localhost:8080/sse`
+- Message Endpoint: `http://localhost:8080/message`
+- Health Check: `http://localhost:8080/health`
+
+**SSE Transport Characteristics:**
+- Real-time bidirectional communication over HTTP
+- WebSocket-like functionality using standard HTTP
+- Better for web applications and remote clients
+- Supports concurrent connections
+- Built-in reconnection and error handling
+- Compatible with HTTP/2 and modern web infrastructure
 
 ### 5. Mirror Status Check
 
@@ -184,7 +218,10 @@ echo '{"jsonrpc": "2.0", "id": 2, "method": "resources/read", "params": {"uri": 
 
 ## MCP Server Configuration
 
-To use the MCP protocol server with AI tools like Cursor, Claude Desktop, or other MCP clients, you need to configure the server in the client's settings.
+To use the MCP protocol server with AI tools like Cursor, Claude Desktop, or other MCP clients, you need to configure the server in the client's settings. The server supports two transport modes:
+
+**STDIO Mode**: Direct process communication (recommended for local use)
+**SSE Mode**: HTTP-based communication (recommended for remote/web use)
 
 ### Cursor AI Configuration
 
@@ -193,15 +230,30 @@ To use the MCP protocol server with AI tools like Cursor, Claude Desktop, or oth
    - Go to "Extensions" -> "MCP Servers" or search for "MCP"
 
 2. **Add SciHub-MCP Server**:
+
+   **STDIO Mode (Recommended for Local Use)**:
    Create or edit your MCP configuration file (usually `~/.cursor/mcp_servers.json`):
    ```json
    {
      "mcpServers": {
-       "scihub-mcp": {
+       "scihub-mcp-stdio": {
+         "description": "SciHub MCP Server - STDIO Mode",
          "command": "/path/to/scihub-mcp",
-         "args": ["--proxy-enabled", "--proxy-host", "127.0.0.1", "--proxy-port", "3080", "mcp"],
+         "args": ["--proxy-enabled", "--proxy-host", "127.0.0.1", "--proxy-port", "3080", "mcp", "--transport", "stdio"],
          "env": {},
          "cwd": "/path/to/working/directory"
+       }
+     }
+   }
+   ```
+
+   **SSE Mode (For Remote/Web Use)**:
+   ```json
+   {
+     "mcpServers": {
+       "scihub-mcp-sse": {
+         "description": "SciHub MCP Server - SSE Mode",
+         "url": "http://localhost:8080/sse"
        }
      }
    }
@@ -211,11 +263,14 @@ To use the MCP protocol server with AI tools like Cursor, Claude Desktop, or oth
    ```json
    {
      "mcpServers": {
-       "scihub-mcp": {
+       "scihub-mcp-stdio": {
          "command": "/path/to/scihub-mcp",
          "args": ["mcp"],
          "env": {},
          "cwd": "/path/to/working/directory"
+       },
+       "scihub-mcp-sse": {
+         "url": "http://localhost:8080/sse"
        }
      }
    }
@@ -229,6 +284,8 @@ To use the MCP protocol server with AI tools like Cursor, Claude Desktop, or oth
    - Linux: `~/.config/Claude/claude_desktop_config.json`
 
 2. **Add Server Configuration**:
+
+   **STDIO Mode (Default)**:
    ```json
    {
      "mcpServers": {
@@ -240,16 +297,36 @@ To use the MCP protocol server with AI tools like Cursor, Claude Desktop, or oth
    }
    ```
 
-   With proxy support:
+   **SSE Mode**:
    ```json
    {
      "mcpServers": {
-       "scihub-mcp": {
-         "command": "/path/to/scihub-mcp",
-         "args": ["--proxy-enabled", "--proxy-host", "127.0.0.1", "--proxy-port", "3080", "mcp"]
+       "scihub-mcp-sse": {
+         "url": "http://localhost:8080/sse"
        }
      }
    }
+   ```
+
+   **Both Modes with Proxy Support**:
+   ```json
+   {
+     "mcpServers": {
+       "scihub-mcp-stdio": {
+         "command": "/path/to/scihub-mcp",
+         "args": ["--proxy-enabled", "--proxy-host", "127.0.0.1", "--proxy-port", "3080", "mcp", "--transport", "stdio"]
+       },
+       "scihub-mcp-sse": {
+         "url": "http://localhost:8080/sse"
+       }
+     }
+   }
+   ```
+
+   Note: For SSE mode, you need to start the server separately:
+   ```bash
+   # Start SSE server in background
+   ./scihub-mcp --proxy-enabled mcp --transport sse &
    ```
 
 ### Generic MCP Client Configuration
@@ -366,11 +443,24 @@ curl http://localhost:8080/download/paper.pdf --output paper.pdf
 ```
 
 ### MCP Protocol Service (`mcp`)
-- **Type**: Model Context Protocol over STDIO
-- **Communication**: JSON-RPC 2.0 messages via STDIN/STDOUT
+- **Type**: Model Context Protocol over multiple transports
+- **Transport Modes**: 
+  - **STDIO**: JSON-RPC 2.0 messages via STDIN/STDOUT (default)
+  - **SSE**: JSON-RPC 2.0 messages via Server-Sent Events over HTTP
 - **Use Case**: LLM applications, MCP clients, Cursor AI integration
 - **Features**: Tools, Resources, and Templates
 - **Format**: Standard MCP protocol messages
+
+**Transport Mode Comparison:**
+
+| Feature | STDIO Mode | SSE Mode |
+|---------|------------|----------|
+| Communication | Process pipes | HTTP/SSE |
+| Use Case | Local CLI tools | Web/Remote apps |
+| Setup | Direct execution | Server + Client |
+| Concurrency | Single session | Multiple sessions |
+| Network | Not required | HTTP network |
+| Firewall | Not affected | May need port access |
 
 **Available MCP Tools:**
 - `download_paper` - Download scientific papers
@@ -383,7 +473,7 @@ curl http://localhost:8080/download/paper.pdf --output paper.pdf
 - `scihub://mirrors/status` - Mirror status information (JSON)
 - `scihub://papers/{filename}` - Access specific paper files (PDF)
 
-**Example MCP Usage:**
+**Example MCP Usage (STDIO Mode):**
 ```bash
 # List available tools
 echo '{"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}' | ./scihub-mcp mcp
@@ -396,6 +486,20 @@ echo '{"jsonrpc": "2.0", "id": 3, "method": "resources/list", "params": {}}' | .
 
 # Read cache resource
 echo '{"jsonrpc": "2.0", "id": 4, "method": "resources/read", "params": {"uri": "scihub://cache"}}' | ./scihub-mcp mcp
+```
+
+**Example MCP Usage (SSE Mode):**
+```bash
+# Start the SSE server
+./scihub-mcp mcp --transport sse &
+
+# Connect to SSE endpoint for event stream
+curl -N http://localhost:8080/sse
+
+# Send JSON-RPC messages to message endpoint
+curl -X POST http://localhost:8080/message \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}'
 ```
 
 ## API Endpoints

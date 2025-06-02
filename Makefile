@@ -1,155 +1,221 @@
 # SciHub-MCP Makefile
 
-# 变量定义
-APP_NAME := scihub-mcp
-MAIN_FILE := cmd/scihub-mcp/main.go
-BUILD_DIR := build
-VERSION := $(shell git describe --tags --always --dirty)
-COMMIT := $(shell git rev-parse --short HEAD)
-DATE := $(shell date +%Y-%m-%d_%H:%M:%S)
-LDFLAGS := -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)"
+.PHONY: help build test clean install release docker docs lint format check-deps
 
-# Go 相关变量
-GOOS := $(shell go env GOOS)
-GOARCH := $(shell go env GOARCH)
+# 变量定义
+BINARY_NAME := scihub-mcp
+PACKAGE := github.com/jifanchn/go-scihub-mcp
+BUILD_DIR := build
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_TIME := $(shell date +%Y-%m-%dT%H:%M:%S%z)
+
+# Go 构建参数
+LDFLAGS := -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(BUILD_TIME)"
+GO_BUILD := go build $(LDFLAGS)
 
 # 默认目标
-.PHONY: all
-all: build
+help: ## 显示帮助信息
+	@echo "SciHub-MCP 构建工具"
+	@echo "==================="
+	@echo "可用命令:"
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-15s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-# 构建
-.PHONY: build
-build:
-	@echo "构建 $(APP_NAME) $(VERSION)..."
+build: ## 构建二进制文件
+	@echo "构建 $(BINARY_NAME)..."
+	$(GO_BUILD) -o $(BINARY_NAME) ./cmd/scihub-mcp
+	@echo "构建完成: $(BINARY_NAME)"
+
+build-all: ## 交叉编译所有平台
+	@echo "交叉编译所有平台..."
 	@mkdir -p $(BUILD_DIR)
-	go build $(LDFLAGS) -o $(BUILD_DIR)/$(APP_NAME) $(MAIN_FILE)
-	@echo "构建完成: $(BUILD_DIR)/$(APP_NAME)"
+	
+	# Linux amd64
+	GOOS=linux GOARCH=amd64 $(GO_BUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./cmd/scihub-mcp
+	
+	# Linux arm64
+	GOOS=linux GOARCH=arm64 $(GO_BUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 ./cmd/scihub-mcp
+	
+	# macOS amd64
+	GOOS=darwin GOARCH=amd64 $(GO_BUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 ./cmd/scihub-mcp
+	
+	# macOS arm64 (Apple Silicon)
+	GOOS=darwin GOARCH=arm64 $(GO_BUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 ./cmd/scihub-mcp
+	
+	# Windows amd64
+	GOOS=windows GOARCH=amd64 $(GO_BUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe ./cmd/scihub-mcp
+	
+	# Windows arm64
+	GOOS=windows GOARCH=arm64 $(GO_BUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-arm64.exe ./cmd/scihub-mcp
+	
+	@echo "交叉编译完成，文件位于 $(BUILD_DIR)/"
+	@ls -la $(BUILD_DIR)/
 
-# 交叉编译
-.PHONY: build-all
-build-all: build-linux build-darwin build-windows
-
-.PHONY: build-linux
-build-linux:
-	@echo "构建 Linux 版本..."
-	@mkdir -p $(BUILD_DIR)
-	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(APP_NAME)-linux-amd64 $(MAIN_FILE)
-	GOOS=linux GOARCH=arm64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(APP_NAME)-linux-arm64 $(MAIN_FILE)
-
-.PHONY: build-darwin
-build-darwin:
-	@echo "构建 macOS 版本..."
-	@mkdir -p $(BUILD_DIR)
-	GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(APP_NAME)-darwin-amd64 $(MAIN_FILE)
-	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(APP_NAME)-darwin-arm64 $(MAIN_FILE)
-
-.PHONY: build-windows
-build-windows:
-	@echo "构建 Windows 版本..."
-	@mkdir -p $(BUILD_DIR)
-	GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(APP_NAME)-windows-amd64.exe $(MAIN_FILE)
-
-# 测试
-.PHONY: test
-test:
-	@echo "运行测试..."
+test: ## 运行 Go 单元测试
+	@echo "运行单元测试..."
 	go test -v ./...
 
-.PHONY: test-coverage
-test-coverage:
-	@echo "运行测试并生成覆盖率报告..."
-	go test -v -cover ./...
-	go test -coverprofile=coverage.out ./...
-	go tool cover -html=coverage.out -o coverage.html
+test-integration: build ## 运行集成测试
+	@echo "运行集成测试..."
+	@./scripts/test-mcp.sh
 
-# 代码检查
-.PHONY: lint
-lint:
-	@echo "运行代码检查..."
-	golangci-lint run
+test-stdio: build ## 仅测试 STDIO 模式
+	@echo "测试 STDIO 模式..."
+	@./scripts/test-mcp.sh --stdio
 
-.PHONY: fmt
-fmt:
-	@echo "格式化代码..."
-	go fmt ./...
+test-sse: build ## 仅测试 SSE 模式
+	@echo "测试 SSE 模式..."
+	@./scripts/test-mcp.sh --sse
 
-.PHONY: vet
-vet:
-	@echo "运行 go vet..."
-	go vet ./...
+test-api: build ## 仅测试 HTTP API 模式
+	@echo "测试 HTTP API 模式..."
+	@./scripts/test-mcp.sh --api
 
-# 依赖管理
-.PHONY: mod-tidy
-mod-tidy:
-	@echo "整理模块依赖..."
-	go mod tidy
+test-all: test test-integration ## 运行所有测试
 
-.PHONY: mod-download
-mod-download:
-	@echo "下载模块依赖..."
-	go mod download
-
-# 安装
-.PHONY: install
-install:
-	@echo "安装 $(APP_NAME)..."
-	go install $(LDFLAGS) $(MAIN_FILE)
-
-# 清理
-.PHONY: clean
-clean:
+clean: ## 清理构建文件
 	@echo "清理构建文件..."
-	rm -rf $(BUILD_DIR)
-	rm -f coverage.out coverage.html
+	@rm -f $(BINARY_NAME)
+	@rm -rf $(BUILD_DIR)
+	@rm -rf cache/
+	@echo "清理完成"
 
-# 创建发布包
-.PHONY: release
-release: clean build-all
+install: build ## 安装到系统路径
+	@echo "安装 $(BINARY_NAME) 到 /usr/local/bin/..."
+	@sudo cp $(BINARY_NAME) /usr/local/bin/
+	@sudo chmod +x /usr/local/bin/$(BINARY_NAME)
+	@echo "安装完成"
+
+uninstall: ## 从系统路径卸载
+	@echo "卸载 $(BINARY_NAME)..."
+	@sudo rm -f /usr/local/bin/$(BINARY_NAME)
+	@echo "卸载完成"
+
+release: clean build-all ## 创建发布包
 	@echo "创建发布包..."
 	@mkdir -p $(BUILD_DIR)/release
-	@for binary in $(shell ls $(BUILD_DIR)/$(APP_NAME)-*); do \
-		base=$$(basename $$binary); \
-		dir=$(BUILD_DIR)/release/$$base; \
-		mkdir -p $$dir; \
-		cp $$binary $$dir/$(APP_NAME)$$(echo $$base | grep -o '\.exe$$' || true); \
-		cp README.md $$dir/; \
-		cp configs/config.yaml $$dir/config.yaml.example; \
-		cd $(BUILD_DIR)/release && tar -czf $$base.tar.gz $$base; \
-		cd ../..; \
+	
+	# 为每个平台创建压缩包
+	@cd $(BUILD_DIR) && \
+	for binary in $(BINARY_NAME)-*; do \
+		if [[ "$$binary" == *".exe" ]]; then \
+			platform=$${binary%%.exe}; \
+			zip -q release/$$platform.zip $$binary; \
+		else \
+			platform=$$binary; \
+			tar -czf release/$$platform.tar.gz $$binary; \
+		fi; \
 	done
-	@echo "发布包已创建在 $(BUILD_DIR)/release/ 目录"
+	
+	# 复制配置文件到发布目录
+	@cp -r configs $(BUILD_DIR)/release/
+	@cp README.md README_cn.md LICENSE $(BUILD_DIR)/release/ 2>/dev/null || true
+	
+	@echo "发布包创建完成，位于 $(BUILD_DIR)/release/"
+	@ls -la $(BUILD_DIR)/release/
 
-# 运行
-.PHONY: run
-run: build
-	./$(BUILD_DIR)/$(APP_NAME)
+docker: ## 构建 Docker 镜像
+	@echo "构建 Docker 镜像..."
+	@docker build -t scihub-mcp:$(VERSION) .
+	@docker tag scihub-mcp:$(VERSION) scihub-mcp:latest
+	@echo "Docker 镜像构建完成: scihub-mcp:$(VERSION)"
 
-.PHONY: run-dev
-run-dev:
-	@echo "开发模式运行..."
-	go run $(MAIN_FILE) --config configs/config.yaml
+docker-run: docker ## 运行 Docker 容器
+	@echo "运行 Docker 容器..."
+	@docker run -it --rm -p 8080:8080 scihub-mcp:latest
 
-.PHONY: run-proxy
-run-proxy:
-	@echo "使用代理运行..."
-	go run $(MAIN_FILE) --config configs/config.yaml --proxy-enabled --proxy-host 127.0.0.1 --proxy-port 3080
+docs: ## 生成文档
+	@echo "生成文档..."
+	@go doc -all ./... > docs/api.md 2>/dev/null || echo "Go doc 生成失败，请检查代码"
+	@echo "文档生成完成"
 
-# 帮助
-.PHONY: help
-help:
-	@echo "可用命令:"
-	@echo "  build         构建应用程序"
-	@echo "  build-all     交叉编译所有平台"
-	@echo "  test          运行测试"
-	@echo "  test-coverage 运行测试并生成覆盖率报告"
-	@echo "  lint          运行代码检查"
-	@echo "  fmt           格式化代码"
-	@echo "  vet           运行 go vet"
-	@echo "  mod-tidy      整理模块依赖"
-	@echo "  install       安装到 GOPATH"
-	@echo "  clean         清理构建文件"
-	@echo "  release       创建发布包"
-	@echo "  run           构建并运行"
-	@echo "  run-dev       开发模式运行"
-	@echo "  run-proxy     使用代理运行"
-	@echo "  help          显示此帮助信息" 
+lint: ## 运行代码检查
+	@echo "运行代码检查..."
+	@which golangci-lint >/dev/null 2>&1 || { echo "请先安装 golangci-lint: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; exit 1; }
+	@golangci-lint run
+
+format: ## 格式化代码
+	@echo "格式化代码..."
+	@go fmt ./...
+	@goimports -w . 2>/dev/null || echo "goimports 未安装，跳过导入排序"
+
+check-deps: ## 检查和更新依赖
+	@echo "检查依赖..."
+	@go mod tidy
+	@go mod verify
+	@echo "依赖检查完成"
+
+vet: ## 运行 go vet
+	@echo "运行 go vet..."
+	@go vet ./...
+
+security: ## 运行安全检查
+	@echo "运行安全检查..."
+	@which gosec >/dev/null 2>&1 || { echo "请先安装 gosec: go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest"; exit 1; }
+	@gosec ./...
+
+coverage: ## 生成测试覆盖率报告
+	@echo "生成测试覆盖率报告..."
+	@go test -coverprofile=coverage.out ./...
+	@go tool cover -html=coverage.out -o coverage.html
+	@echo "覆盖率报告生成完成: coverage.html"
+
+dev: build ## 开发模式：构建并启动开发服务器
+	@echo "启动开发服务器..."
+	@./$(BINARY_NAME) --config configs/config.yaml api
+
+dev-mcp: build ## 开发模式：启动 MCP 服务器
+	@echo "启动 MCP 开发服务器..."
+	@./$(BINARY_NAME) --config configs/config.yaml mcp
+
+dev-sse: build ## 开发模式：启动 SSE MCP 服务器
+	@echo "启动 SSE MCP 开发服务器..."
+	@./$(BINARY_NAME) --config configs/config-sse.yaml mcp --transport sse
+
+# 性能测试
+benchmark: build ## 运行性能测试
+	@echo "运行性能测试..."
+	@go test -bench=. -benchmem ./... 2>/dev/null || echo "没有找到性能测试"
+
+# 快速开始
+quick-start: build ## 快速开始：构建并显示帮助
+	@echo "快速开始指南:"
+	@echo "=============="
+	@echo "1. 配置文件已准备好："
+	@echo "   - configs/config.yaml (默认配置)"
+	@echo "   - configs/config-sse.yaml (SSE 模式配置)"
+	@echo ""
+	@echo "2. 运行测试："
+	@echo "   make test-all"
+	@echo ""
+	@echo "3. 启动服务："
+	@echo "   - HTTP API: make dev"
+	@echo "   - MCP STDIO: make dev-mcp"
+	@echo "   - MCP SSE: make dev-sse"
+	@echo ""
+	@echo "4. 下载论文："
+	@echo "   ./$(BINARY_NAME) fetch --doi \"10.1038/nature12373\""
+	@echo ""
+	@./$(BINARY_NAME) --help
+
+# CI/CD 相关
+ci: clean format vet lint test build ## CI 流水线：格式化、检查、测试、构建
+	@echo "CI 流水线完成"
+
+# 显示构建信息
+info: ## 显示构建信息
+	@echo "构建信息:"
+	@echo "========="
+	@echo "包名: $(PACKAGE)"
+	@echo "版本: $(VERSION)"
+	@echo "提交: $(COMMIT)"
+	@echo "时间: $(BUILD_TIME)"
+	@echo "Go 版本: $(shell go version)"
+
+# 创建示例配置
+config: ## 创建示例配置文件
+	@echo "创建示例配置文件..."
+	@mkdir -p ~/.config/scihub-mcp/
+	@cp configs/config.yaml ~/.config/scihub-mcp/config.yaml
+	@echo "配置文件已复制到: ~/.config/scihub-mcp/config.yaml"
+	@echo "你可以编辑此文件来自定义配置" 

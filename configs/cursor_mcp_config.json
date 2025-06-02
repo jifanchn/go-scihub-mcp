@@ -1,10 +1,14 @@
 {
   "mcpServers": {
-    "scihub-mcp": {
-      "command": "/path/to/scihub-mcp",
-      "args": ["mcp"],
-      "env": {},
-      "cwd": "/path/to/working/directory"
+    "scihub-mcp-stdio": {
+      "command": "/Users/jifan/Code/go-scihub-mcp/scihub-mcp",
+      "args": ["mcp", "--transport", "stdio"],
+      "env": {
+        "SCIHUB_CONFIG": "/Users/jifan/Code/go-scihub-mcp/configs/config.yaml"
+      }
+    },
+    "scihub-mcp-sse": {
+      "url": "http://localhost:8080/sse"
     }
   }
 } 

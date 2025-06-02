@@ -13,21 +13,32 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
+// TransportMode 传输模式
+type TransportMode string
+
+const (
+	TransportStdio TransportMode = "stdio"
+	TransportSSE   TransportMode = "sse"
+)
+
 // MCPServer 真正的MCP协议服务器
 type MCPServer struct {
 	downloader    *downloader.Downloader
 	mirrorManager *mirror.MirrorManager
 	server        *server.MCPServer
+	transport     TransportMode
+	host          string
+	port          int
+	ssePath       string
 }
 
 // NewMCPServer 创建新的MCP服务器
-func NewMCPServer(d *downloader.Downloader, mm *mirror.MirrorManager) *MCPServer {
-	// 创建MCP服务器
+func NewMCPServer(d *downloader.Downloader, mm *mirror.MirrorManager, transport TransportMode, host string, port int, ssePath string) *MCPServer {
+	// 创建MCP服务器 - 只启用基本工具功能，模仿ScholarAI的配置
 	s := server.NewMCPServer(
 		"SciHub-MCP",
 		"1.0.0",
 		server.WithToolCapabilities(true),
-		server.WithResourceCapabilities(true, true),
 		server.WithRecovery(),
 	)
 
@@ -35,11 +46,14 @@ func NewMCPServer(d *downloader.Downloader, mm *mirror.MirrorManager) *MCPServer
 		downloader:    d,
 		mirrorManager: mm,
 		server:        s,
+		transport:     transport,
+		host:          host,
+		port:          port,
+		ssePath:       ssePath,
 	}
 
-	// 注册工具和资源
+	// 只注册工具，暂时不注册资源
 	mcpServer.registerTools()
-	mcpServer.registerResources()
 
 	return mcpServer
 }
@@ -334,8 +348,35 @@ func (m *MCPServer) handlePaperResource(ctx context.Context, request mcp.ReadRes
 
 // Start 启动MCP服务器
 func (m *MCPServer) Start() error {
-	log.Println("Starting MCP protocol server...")
-	return server.ServeStdio(m.server)
+	switch m.transport {
+	case TransportStdio:
+		log.Println("Starting MCP protocol server with stdio transport...")
+		return server.ServeStdio(m.server)
+	case TransportSSE:
+		log.Printf("Starting MCP protocol server with SSE transport on %s:%d%s...", m.host, m.port, m.ssePath)
+		return m.startSSEServer()
+	default:
+		return fmt.Errorf("unsupported transport mode: %s", m.transport)
+	}
+}
+
+// startSSEServer 启动SSE服务器
+func (m *MCPServer) startSSEServer() error {
+	// 创建SSE服务器
+	sseServer := server.NewSSEServer(m.server,
+		server.WithBaseURL(fmt.Sprintf("http://%s:%d", m.host, m.port)),
+		server.WithSSEEndpoint(m.ssePath),
+		server.WithMessageEndpoint("/message"),
+	)
+
+	addr := fmt.Sprintf("%s:%d", m.host, m.port)
+	log.Printf("SSE server listening on %s", addr)
+	log.Printf("SSE endpoint: http://%s%s", addr, m.ssePath)
+	log.Printf("Message endpoint: http://%s/message", addr)
+	log.Printf("Health check: http://%s/health", addr)
+
+	// 启动SSE服务器
+	return sseServer.Start(addr)
 }
 
 // 辅助函数

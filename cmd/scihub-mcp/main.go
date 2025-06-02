@@ -220,6 +220,7 @@ func runHTTPAPI(args []string, flags *GlobalFlags) {
 // runMCPServer 运行真正的MCP协议服务器
 func runMCPServer(args []string, flags *GlobalFlags) {
 	mcpFlags := flag.NewFlagSet("mcp", flag.ExitOnError)
+	transport := mcpFlags.String("transport", "", "Transport mode: stdio, sse (default: from config)")
 	mcpFlags.Parse(args)
 
 	log.Println("Starting MCP protocol server...")
@@ -228,6 +229,11 @@ func runMCPServer(args []string, flags *GlobalFlags) {
 	cfg, err := loadConfigWithFlags(flags)
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
+	}
+
+	// 覆盖传输模式（如果在命令行指定）
+	if *transport != "" {
+		cfg.MCP.Transport = *transport
 	}
 
 	// 创建组件
@@ -240,8 +246,20 @@ func runMCPServer(args []string, flags *GlobalFlags) {
 	mm.Start()
 	defer mm.Stop()
 
+	// 确定传输模式
+	var transportMode mcpserver.TransportMode
+	switch cfg.MCP.Transport {
+	case "sse":
+		transportMode = mcpserver.TransportSSE
+	case "stdio":
+		transportMode = mcpserver.TransportStdio
+	default:
+		log.Printf("Invalid transport mode '%s', defaulting to stdio", cfg.MCP.Transport)
+		transportMode = mcpserver.TransportStdio
+	}
+
 	// 创建并启动MCP服务器
-	mcpServer := mcpserver.NewMCPServer(dl, mm)
+	mcpServer := mcpserver.NewMCPServer(dl, mm, transportMode, cfg.MCP.Host, cfg.MCP.Port, cfg.MCP.SSEPath)
 	if err := mcpServer.Start(); err != nil {
 		log.Fatalf("Failed to start MCP server: %v", err)
 	}
@@ -429,7 +447,7 @@ api 命令选项:
   --host string                HTTP API主机 (覆盖全局 --mcp-host)
 
 mcp 命令选项:
-  无选项，启动标准MCP协议服务器，通过STDIO通信
+  --transport string           传输模式: stdio, sse (默认: 从配置文件)
 
 test 命令选项:
   --mirror string              要测试的镜像URL
@@ -441,32 +459,39 @@ test 命令选项:
   api: 启动HTTP REST API服务，可通过curl或浏览器访问
            支持 /fetch, /download/, /mirrors, /status 等端点
            
-  mcp:     启动标准MCP协议服务器，通过STDIO与客户端通信
+  mcp:     启动标准MCP协议服务器，支持多种传输模式：
+           - stdio: 通过标准输入输出通信 (默认)
+           - sse: 通过Server-Sent Events HTTP服务器通信
            提供工具: download_paper, check_mirror_status, test_mirror
            提供资源: scihub://cache, scihub://mirrors/status, scihub://papers/{filename}
 
 示例:
   # 启动HTTP API服务（默认模式）
   scihub-mcp
-  scihub-mcp api
 
-  # 启动MCP协议服务器
+  # 启动MCP协议服务器（STDIO模式）
   scihub-mcp mcp
 
-  # 全局启用代理
-  scihub-mcp --proxy-enabled --proxy-host 127.0.0.1 --proxy-port 3080
+  # 启动MCP协议服务器（SSE模式）
+  scihub-mcp mcp --transport sse
 
-  # 下载论文
+  # 下载论文通过DOI
   scihub-mcp fetch --doi "10.1038/nature12373"
-  scihub-mcp --proxy-enabled fetch --doi "10.1038/nature12373"
 
-  # 启动HTTP API在指定端口
-  scihub-mcp api --port 9090
-  scihub-mcp --proxy-enabled api --port 9090
+  # 下载论文通过URL
+  scihub-mcp fetch --url "https://example.com/paper.pdf"
 
   # 检查镜像状态
   scihub-mcp status
-  scihub-mcp --proxy-enabled status
+
+  # 测试特定镜像
+  scihub-mcp test --mirror "https://sci-hub.ru"
+
+  # 使用自定义配置文件
+  scihub-mcp --config ./my-config.yaml mcp --transport sse
+
+  # 启动MCP SSE服务器在自定义端口
+  scihub-mcp --mcp-port 9090 mcp --transport sse
 
 更多信息请访问: https://github.com/jifanchn/go-scihub-mcp
 `, version)
